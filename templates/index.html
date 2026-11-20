@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="{{ wt('Skyfall OSINT Helper — локальный анализ открытых источников') }}">
+  <title>{{ wt('Skyfall — OSINT Helper') }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script>
+    window.__LANG__ = {{ lang|tojson }};
+    window.__WEB_I18N__ = {{ web_i18n|tojson }};
+  </script>
+  <script src="/static/i18n.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+
+  <!-- ═══════════ HEADER ═══════════ -->
+  <header class="header">
+    <div class="header__inner">
+      <div class="header__brand">
+        <span class="header__logo" aria-hidden="true">◉</span>
+        <div>
+          <h1 class="header__title">SKYFALL</h1>
+          <p class="header__tagline">{{ wt('Локальный OSINT-анализ') }}</p>
+        </div>
+      </div>
+
+      <div class="header__right">
+        <button type="button" class="btn btn--ghost btn--sm" id="openInvListBtn" title="{{ wt('Все расследования') }}">
+          {{ wt('📂 Расследования') }}
+        </button>
+        <button type="button" class="btn btn--ghost btn--sm" id="openLlmSettingsBtn" title="{{ wt('Настроить провайдера LLM') }}">
+          ⚙️ LLM
+        </button>
+        <div class="llm-badge" id="llmBadge" title="{{ wt('Активный LLM-провайдер') }}">
+          <span class="llm-badge__dot" id="llmBadgeDot"></span>
+          <span class="llm-badge__text" id="llmBadgeText">{{ wt('LLM: проверка…') }}</span>
+        </div>
+        <div class="health" id="health" role="status" aria-live="polite">
+          <span class="health__dot health__dot--pending"></span>
+          <span class="health__text" id="healthText">{{ wt('Проверка связи…') }}</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <main class="main">
+
+    <!-- ---------- FORM ---------- -->
+    <section class="card" aria-labelledby="form-title">
+      <h2 class="card__title" id="form-title">{{ wt('Что ищем?') }}</h2>
+
+      <form id="investigate-form" class="form" novalidate>
+
+        <!-- Data type -->
+        <fieldset class="fieldset">
+          <legend class="fieldset__legend">{{ wt('Тип данных') }}</legend>
+          <div class="form__radios" role="radiogroup" aria-label="{{ wt('Тип входных данных') }}">
+            <label class="radio">
+              <input type="radio" name="input_type" value="username" checked>
+              <span class="radio__label">
+                <span class="radio__icon" aria-hidden="true">@</span>
+                {{ wt('Ник') }}
+              </span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="input_type" value="email">
+              <span class="radio__label">
+                <span class="radio__icon" aria-hidden="true">✉</span>
+                {{ wt('Email') }}
+              </span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="input_type" value="domain">
+              <span class="radio__label">
+                <span class="radio__icon" aria-hidden="true">⌘</span>
+                {{ wt('Домен') }}
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <!-- Value -->
+        <div class="field">
+          <label for="value" class="field__label" id="valueLabel">{{ wt('Значение') }}</label>
+          <input
+            type="text"
+            id="value"
+            name="value"
+            class="field__input"
+            placeholder="{{ wt('Например: octocat') }}"
+            autocomplete="off"
+            spellcheck="false"
+            required
+            minlength="1"
+            maxlength="200"
+            autofocus
+          >
+          <p class="field__hint" id="valueHint">{{ wt('Введи ник, который хочешь проверить.') }}</p>
+        </div>
+
+        <!-- Where to add the result -->
+        <div class="field">
+          <label for="targetInvestigation" class="field__label">{{ wt('Куда добавить результат') }}</label>
+          <select id="targetInvestigation" class="field__select">
+            <option value="__new__">{{ wt('＋ Новое расследование') }}</option>
+          </select>
+          <p class="field__hint">
+            {{ wt('Выбери прошлое расследование — новые звенья добавятся в его граф, а не в отдельный.') }}
+          </p>
+        </div>
+
+        <!-- Link to an existing node -->
+        <div class="field hidden" id="linkToField">
+          <label for="linkToNode" class="field__label">{{ wt('Связать новый запрос с звеном') }}</label>
+          <select id="linkToNode" class="field__select">
+            <option value="">{{ wt('— без связи —') }}</option>
+          </select>
+          <p class="field__hint">
+            {{ wt('Новый запрос появится в графе и сразу соединится с выбранным звеном.') }}
+          </p>
+        </div>
+
+        <!-- Mode and button -->
+        <div class="form__actions form__actions--split">
+          <label class="checkbox" for="rawMode" title="{{ wt('Пропустить фильтрацию и анализ через LLM') }}">
+            <input type="checkbox" id="rawMode">
+            <span class="checkbox__box" aria-hidden="true"></span>
+            <span class="checkbox__label">
+              {{ wt('Режим без AI') }}
+              <small>{{ wt('Быстрее: только сбор и сырые данные') }}</small>
+            </span>
+          </label>
+          <button type="submit" class="btn btn--primary" id="submit-btn">
+            <span class="btn__label">{{ wt('🔎 Расследовать') }}</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ---------- PROGRESS ---------- -->
+    <section id="progress" class="progress hidden" aria-live="polite">
+      <div class="progress__spinner" aria-hidden="true"></div>
+      <p class="progress__text">
+        <span class="progress__title" id="progressTitle">{{ wt('Идёт сбор данных и анализ…') }}</span>
+        <small id="progressHint">{{ wt('Sherlock и Maigret проверяют тысячи сайтов. AI-этапы могут занять несколько минут; если LLM недоступна или не уложилась в таймаут, Skyfall покажет сырые данные.') }}</small>
+      </p>
+    </section>
+
+    <!-- ---------- ERROR ---------- -->
+    <section id="error" class="error hidden" role="alert">
+      <span class="error__icon" aria-hidden="true">⚠</span>
+      <div class="error__body">
+        <p class="error__title">{{ wt('Ошибка') }}</p>
+        <p class="error__text" id="errorText"></p>
+      </div>
+    </section>
+
+    <!-- ---------- RESULT ---------- -->
+    <section id="result" class="result hidden">
+
+      <!-- Investigation: title, searches, saving -->
+      <div class="card inv-bar hidden" id="invBar">
+        <div class="inv-bar__head">
+          <div class="inv-bar__title-wrap">
+            <span class="inv-bar__eyebrow">{{ wt('Расследование') }}</span>
+            <input class="inv-bar__title" id="invTitle" maxlength="200" spellcheck="false">
+          </div>
+          <div class="inv-bar__actions">
+            <span class="inv-bar__meta" id="invMeta"></span>
+            <button type="button" class="btn btn--ghost btn--sm" id="savePageBtn" title="{{ wt('Сохранить полную HTML-страницу в saved_pages/') }}">
+              {{ wt('💾 Сохранить страницу') }}
+            </button>
+          </div>
+        </div>
+        <div class="inv-bar__searches" id="invSearches"></div>
+        <div class="inv-bar__saved hidden" id="invSaved"></div>
+      </div>
+
+      <!-- Meta: what was searched, when, where the report is -->
+      <div class="card meta-card" id="metaCard">
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="meta-item__label">{{ wt('Запрос') }}</span>
+            <span class="meta-item__value" id="metaInput">—</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item__label">{{ wt('Тип') }}</span>
+            <span class="meta-item__value" id="metaType">—</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item__label">{{ wt('Режим') }}</span>
+            <span class="meta-item__value"><span class="mode-badge" id="metaMode">—</span></span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item__label">{{ wt('Собрано') }}</span>
+            <span class="meta-item__value" id="metaTime">—</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-item__label">{{ wt('Отчёт') }}</span>
+            <span class="meta-item__value meta-item__value--mono" id="metaPath">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="card" id="summaryCard" hidden>
+        <h2 class="card__title">{{ wt('📝 Сводка') }}</h2>
+        <p class="result__summary" id="summaryText"></p>
+      </div>
+
+      <!-- Model reasoning (collapsed by default) -->
+      <details class="card details" id="thinkingCard" hidden>
+        <summary class="details__summary">{{ wt('🧠 Ход мысли модели') }}</summary>
+        <pre class="pre" id="thinkingText"></pre>
+      </details>
+
+      <!-- Entities -->
+      <div class="card" id="entitiesCard" hidden>
+        <h2 class="card__title">
+          {{ wt('🔎 Сущности') }}
+          <span class="badge" id="entitiesCount">0</span>
+        </h2>
+        <ul class="entity-list" id="entitiesList"></ul>
+      </div>
+
+      <!-- Connections -->
+      <div class="card" id="connectionsCard" hidden>
+        <h2 class="card__title">
+          {{ wt('🔗 Связи') }}
+          <span class="badge" id="connectionsCount">0</span>
+        </h2>
+        <ul class="connection-list" id="connectionsList"></ul>
+      </div>
+
+      <!-- Remarks: contradictions + ambiguities -->
+      <div class="card" id="notesCard" hidden>
+        <h2 class="card__title">{{ wt('⚠️ Замечания') }}</h2>
+        <div class="notes-grid">
+          <div class="notes-col" id="contradictionsCol" hidden>
+            <h3 class="notes-col__title">{{ wt('Противоречия') }}</h3>
+            <ul class="notes-list" id="contradictionsList"></ul>
+          </div>
+          <div class="notes-col" id="uncertaintiesCol" hidden>
+            <h3 class="notes-col__title">{{ wt('Неясности') }}</h3>
+            <ul class="notes-list" id="uncertaintiesList"></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reasoning tree -->
+      <div class="card" id="treeCard" hidden>
+        <h2 class="card__title">{{ wt('🌳 Дерево рассуждений') }}</h2>
+        <div class="tree" id="treeRoot"></div>
+      </div>
+
+      <!-- Filtering: kept / dropped -->
+      <div class="card" id="filterCard" hidden>
+        <h2 class="card__title">{{ wt('🧹 Фильтрация сайтов') }}</h2>
+
+        <div class="filter-block">
+          <h3 class="filter-block__title">
+            <span class="dot dot--kept" aria-hidden="true"></span>
+            {{ wt('Оставлено') }}
+            <span class="badge" id="keptCount">0</span>
+          </h3>
+          <ul class="site-list" id="keptList"></ul>
+        </div>
+
+        <details class="filter-block details" id="droppedBlock" hidden>
+          <summary class="details__summary">
+            <span class="dot dot--dropped" aria-hidden="true"></span>
+            {{ wt('Отброшено') }}
+            <span class="badge" id="droppedCount">0</span>
+          </summary>
+          <ul class="site-list site-list--muted" id="droppedList"></ul>
+        </details>
+
+        <details class="details" id="filterThinkingWrap" hidden>
+          <summary class="details__summary">{{ wt('🧠 Ход мысли на этапе фильтрации') }}</summary>
+          <pre class="pre" id="filterThinking"></pre>
+        </details>
+      </div>
+
+      <!-- ═══════════ INTERACTIVE GRAPH ═══════════ -->
+      <div class="card" id="graphCard" hidden>
+        <div class="graph__head">
+          <h2 class="card__title">
+            {{ wt('🕸 Граф расследования') }}
+            <span class="badge" id="graphNodesCount">0</span>
+            <span class="badge badge--muted" id="graphEdgesCount">{{ wt('0 связей') }}</span>
+          </h2>
+
+          <div class="graph__toolbar">
+            <button type="button" class="btn btn--ghost btn--sm" id="addNodeBtn" title="{{ wt('Создать собственное звено') }}">
+              {{ wt('＋ Звено') }}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" id="linkModeBtn" title="{{ wt('Соединить два звена') }}">
+              {{ wt('🔗 Связь') }}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" id="relayoutBtn" title="{{ wt('Перераскладочка графа') }}">
+              {{ wt('⟲ Разложить') }}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" id="fitGraphBtn" title="{{ wt('Вписать граф в окно') }}">
+              ⤢
+            </button>
+          </div>
+        </div>
+
+        <p class="graph__hint">
+          {{ wt('Клик по карточке — источник и заметка · тяни карточки мышью · колесо — зум · фон — панорама') }}
+        </p>
+
+        <div id="graph" class="graph"></div>
+
+        <div class="graph__linkhint hidden" id="graphLinkHint">
+          <span id="graphLinkHintText">{{ wt('Кликни по первому звену…') }}</span>
+          <button type="button" class="btn btn--ghost btn--sm" id="cancelLinkBtn">{{ wt('Отмена') }}</button>
+        </div>
+      </div>
+
+      <!-- Nodes, sources, and notes (needed both on the page and in the HTML snapshot) -->
+      <details class="card details" id="invDetailsCard" hidden>
+        <summary class="details__summary">{{ wt('📌 Звенья, источники и заметки') }}</summary>
+        <div class="inv-details" id="invDetails"></div>
+      </details>
+
+      <!-- Raw data -->
+      <details class="card details" id="rawCard">
+        <summary class="details__summary">{{ wt('📦 Сырые данные (raw_data)') }}</summary>
+        <pre class="pre pre--json" id="rawText"></pre>
+      </details>
+
+    </section>
+  </main>
+
+  <!-- ═══════════ FOOTER ═══════════ -->
+  <footer class="footer">
+    <p>Skyfall OSINT Helper · Powered by Sherlock · Maigret · Holehe · Diablinda · theHarvester · ThreatFox · Ollama / OpenAI / OpenRouter</p>
+    <button type="button" class="btn btn--ghost btn--sm footer__logs" id="downloadLogsBtn"
+            title="{{ wt('Скачать последний лог-файл Skyfall') }}">
+      {{ wt('📥 Скачать логи') }}
+    </button>
+  </footer>
+
+  <!-- ═══════════ MODAL: NODE ═══════════ -->
+  <div class="modal hidden" id="nodeModal" role="dialog" aria-modal="true" aria-labelledby="nodeModalTitle">
+    <div class="modal__backdrop" data-close-node-modal></div>
+    <div class="modal__panel">
+      <div class="modal__head">
+        <h3 class="modal__title" id="nodeModalTitle">{{ wt('Новое звено') }}</h3>
+        <button type="button" class="modal__close" data-close-node-modal aria-label="{{ wt('Закрыть') }}">×</button>
+      </div>
+
+      <form id="nodeForm" class="modal__form">
+        <input type="hidden" id="nodeId">
+
+        <label class="field" for="nodeLabel">
+          <span class="field__label">{{ wt('Название') }}</span>
+          <input class="field__input" id="nodeLabel" required maxlength="500" placeholder="{{ wt('Например: john.doe@mail.com') }}">
+        </label>
+
+        <div class="modal__row">
+          <label class="field" for="nodeType">
+            <span class="field__label">{{ wt('Тип') }}</span>
+            <select class="field__select" id="nodeType">
+              <option value="custom">{{ wt('Своё звено') }}</option>
+              <option value="nick">{{ wt('Ник') }}</option>
+              <option value="email">{{ wt('Email') }}</option>
+              <option value="domain">{{ wt('Домен') }}</option>
+              <option value="url">{{ wt('Ссылка / сайт') }}</option>
+              <option value="telegram">Telegram</option>
+              <option value="unknown">{{ wt('Сущность') }}</option>
+              <option value="center">{{ wt('Субъект (центр)') }}</option>
+            </select>
+          </label>
+
+          <label class="field" for="nodeNum">
+            <span class="field__label">{{ wt('Номер') }}</span>
+            <input class="field__input" id="nodeNum" disabled>
+          </label>
+        </div>
+
+        <label class="field" for="nodeUrl">
+          <span class="field__label">{{ wt('Ссылка на источник') }}</span>
+          <input class="field__input" id="nodeUrl" maxlength="2000" placeholder="https://example.com/profile">
+          <span class="field__hint">{{ wt('Ссылка на профиль, страницу, отчёт — что угодно.') }}</span>
+        </label>
+
+        <label class="field" for="nodeDescription">
+          <span class="field__label">{{ wt('Описание') }}</span>
+          <textarea class="field__textarea" id="nodeDescription" rows="2" maxlength="4000"
+                    placeholder="{{ wt('Короткая подпись под названием звена') }}"></textarea>
+        </label>
+
+        <label class="field" for="nodeNotes">
+          <span class="field__label">{{ wt('Заметка') }}</span>
+          <textarea class="field__textarea" id="nodeNotes" rows="3" maxlength="20000"
+                    placeholder="{{ wt('Почему это звено важно, что о нём известно') }}"></textarea>
+        </label>
+
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" data-close-node-modal>{{ wt('Отмена') }}</button>
+          <button type="submit" class="btn btn--primary">{{ wt('Сохранить') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════ MODAL: MY INVESTIGATIONS ═══════════ -->
+  <div class="modal hidden" id="invModal" role="dialog" aria-modal="true" aria-labelledby="invModalTitle">
+    <div class="modal__backdrop" data-close-inv-modal></div>
+    <div class="modal__panel modal__panel--wide">
+      <div class="modal__head">
+        <h3 class="modal__title" id="invModalTitle">{{ wt('Мои расследования') }}</h3>
+        <button type="button" class="modal__close" data-close-inv-modal aria-label="{{ wt('Закрыть') }}">×</button>
+      </div>
+
+      <div class="inv-list" id="invList"></div>
+
+      <div class="inv-modal__foot">
+        <button type="button" class="btn btn--ghost btn--sm" id="newInvBtn">{{ wt('＋ Новое расследование') }}</button>
+        <span class="inv-modal__hint">{{ wt('Данные хранятся в папке') }} <code>investigations/</code></span>
+      </div>
+
+      <details class="inv-pages">
+        <summary class="details__summary">{{ wt('🖫 Сохранённые HTML-страницы') }}</summary>
+        <div class="inv-pages__list" id="savedPagesList"></div>
+      </details>
+    </div>
+  </div>
+
+  <!-- ═══════════ MODAL: LLM SETTINGS ═══════════ -->
+  <div class="modal hidden" id="llmModal" role="dialog" aria-modal="true" aria-labelledby="llmModalTitle">
+    <div class="modal__backdrop" data-close-llm-modal></div>
+    <div class="modal__panel llm-modal__panel">
+      <div class="modal__head">
+        <h3 class="modal__title" id="llmModalTitle">{{ wt('Настройки LLM') }}</h3>
+        <button type="button" class="modal__close" data-close-llm-modal aria-label="{{ wt('Закрыть') }}">×</button>
+      </div>
+
+      <form id="llmForm" class="modal__form">
+        <label class="field" for="llmProvider">
+          <span class="field__label">{{ wt('Провайдер') }}</span>
+          <select class="field__select" id="llmProvider">
+            <option value="ollama">{{ wt('Ollama (локально)') }}</option>
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
+        </label>
+
+        <label class="field" for="llmModel">
+          <span class="field__label" id="llmModelLabel">{{ wt('Модель') }}</span>
+          <input class="field__input" id="llmModel" maxlength="200" placeholder="qwen2.5:7b">
+        </label>
+
+        <label class="field hidden" for="llmApiKey" id="llmKeyField">
+          <span class="field__label">{{ wt('API-ключ') }}</span>
+          <input class="field__input" id="llmApiKey" type="password" autocomplete="new-password"
+                 maxlength="500" placeholder="sk-...">
+          <span class="field__hint" id="llmKeyHint">
+            {{ wt('Ключ хранится только локально в') }} <code>llm_settings.json</code>.
+          </span>
+        </label>
+
+        <label class="field hidden" for="llmBaseUrl" id="llmBaseField">
+          <span class="field__label">{{ wt('Base URL') }}</span>
+          <input class="field__input" id="llmBaseUrl" maxlength="500"
+                 placeholder="https://api.openai.com/v1">
+        </label>
+
+        <p class="field__hint">
+          {{ wt('Для OpenRouter укажите ключ OpenRouter и базовый URL') }}
+          <code>https://openrouter.ai/api/v1</code>{{ wt('. Для OpenAI — ключ OpenAI. Настройки применяются сразу и сохраняются между перезапусками.') }}
+        </p>
+
+        <div class="llm-status" id="llmStatus"></div>
+
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="llmTestBtn">{{ wt('Проверить') }}</button>
+          <button type="button" class="btn btn--ghost" data-close-llm-modal>{{ wt('Отмена') }}</button>
+          <button type="submit" class="btn btn--primary">{{ wt('Сохранить') }}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════ NOTIFICATIONS ═══════════ -->
+  <div class="toast hidden" id="toast" role="status" aria-live="polite">
+    <span class="toast__text" id="toastText"></span>
+    <a class="toast__link hidden" id="toastLink" target="_blank" rel="noopener">{{ wt('Открыть') }}</a>
+  </div>
+
+</body>
+</html>
