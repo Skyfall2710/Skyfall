@@ -8,8 +8,9 @@ username, email address, or domain. Collection runs on your machine and the
 LLM stage can use either a local model through [Ollama](https://ollama.com/) or
 a cloud provider (OpenAI / OpenRouter).
 
+WEB INTERFACE
 ![Skyfall web interface](docs/screenshots/web.png)
-
+CLI INTERFACE
 ![Skyfall CLI interface](docs/screenshots/CLI.png)
 
 <sub>Screenshots are illustrative and use fictional data.</sub>
