@@ -109,7 +109,7 @@ flowchart LR
 ### 1. Python dependencies
 
 ```bash
-git clone <your-repo-url> skyfall
+git clone https://github.com/Skyfall2710/Skyfall.git
 cd skyfall
 
 python3 -m venv venv
